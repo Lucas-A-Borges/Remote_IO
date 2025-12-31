@@ -109,6 +109,77 @@ def ler_variaveis_unitpro(caminho_arquivo: str) -> List[Dict[str, str]]:
             })
     return lista_variaveis
 
+def preencher_canais_da_matriz(caminho_arquivo, matriz_hardware):
+    tree = ET.parse(caminho_arquivo)
+    root = tree.getroot()
+
+    # Itera sobre todas as variáveis no XML
+    for var in root.findall(".//variables"):
+        nome_var = var.get("name", "")
+        
+        # Regex para extrair Drop e Slot do nome (Ex: ED_DROP02_SLOT04)
+        match_info = re.search(r'DROP(\d+)_SLOT(\d+)', nome_var)
+        
+        if match_info:
+            num_drop = int(match_info.group(1))
+            num_slot = int(match_info.group(2))
+            
+            # Verifica se esse Drop e Slot existem na nossa matriz
+            if num_drop in matriz_hardware and num_slot in matriz_hardware[num_drop].slots:
+                obj_slot = matriz_hardware[num_drop].slots[num_slot]
+                
+                # Navega na estrutura interna: DIS_CH_IN -> [n] -> VALUE -> Alias
+                # Usamos .//instanceElementDesc para buscar os níveis de canais
+                for ch_desc in var.findall(".//instanceElementDesc"):
+                    ch_name = ch_desc.get("name", "") # Ex: "[0]", "[1]"
+                    
+                    if ch_name.startswith("[") and ch_name.endswith("]"):
+                        try:
+                            # Extrai o índice do canal: [0] -> 0
+                            indice_canal = int(ch_name.strip("[]"))
+                            
+                            # Busca o atributo 'Alias' dentro do elemento 'VALUE'
+                            value_elem = ch_desc.find(".//instanceElementDesc[@name='VALUE']")
+                            if value_elem is not None:
+                                attribute_alias = value_elem.find("attribute[@name='Alias']")
+                                if attribute_alias is not None:
+                                    tag_nome = attribute_alias.get("value")
+                                    
+                                    # Atribui ao objeto Canal correspondente
+                                    # Nota: No seu código Canal(i+1), então indice 0 é Canal(1)
+                                    if indice_canal < len(obj_slot.canais):
+                                        obj_slot.canais[indice_canal].nome = tag_nome
+                                        #print(f"Preenchido: Drop {num_drop} Slot {num_slot} Canal {indice_canal} -> {tag_nome}")
+                        except ValueError:
+                            continue
+
+def preencher_comentarios_na_matriz(matriz_hardware, lista_variaveis_lidas):
+    # 1. Criar um dicionário de busca rápida {nome_da_tag: comentario}
+    # Isso evita ter que percorrer a lista inteira para cada canal (O(1) vs O(n))
+    mapa_comentarios = {
+        var['nome']: var['comentario'] 
+        for var in lista_variaveis_lidas 
+        if var['nome']
+    }
+
+    print("Iniciando preenchimento de comentários...")
+    contador = 0
+
+    # 2. Navegar na matriz de hardware
+    for drop in matriz_hardware.values():
+        for slot in drop.slots.values():
+            for canal in slot.canais:
+                # Se o canal tiver um nome (tag) atribuído
+                if canal.nome:
+                    # Busca o comentário no mapa que criamos
+                    comentario = mapa_comentarios.get(canal.nome)
+                    
+                    if comentario:
+                        canal.comentario = comentario
+                        contador += 1
+
+    print(f"Sucesso: {contador} comentários vinculados aos canais.")
+
 
 #----------------------MAIN----------------------------
 if __name__ == "__main__":
@@ -133,8 +204,14 @@ if __name__ == "__main__":
     # 1. Leitura e Catalogação das Variáveis
     lista_variaveis_lidas = ler_variaveis_unitpro(caminho_unitpro)
 
-    # 1. Gerar a estrutura a partir do hardware do PLC
+    # 2. Gerar a estrutura a partir do hardware do PLC
     matriz_hardware = gerar_matriz_plc(caminho_unitpro)
-    print("Matriz de Hardware Gerada:")   
-        
-        
+ 
+    # 3. Preencher os nomes dos canais com base nas variáveis do arquivo
+    preencher_canais_da_matriz(caminho_unitpro, matriz_hardware)
+
+    # 4. Preencher os COMENTÁRIOS nos canais
+    # Cruza os dados da matriz com a lista_variaveis_lidas
+    preencher_comentarios_na_matriz(matriz_hardware, lista_variaveis_lidas)
+
+    print("Processamento concluído.") 

@@ -80,3 +80,52 @@ e depois nos numeros de cada canal temos um numero e uma tag associada. No exemp
 esta preenchido com o tag FV1430CN039_IZSHA e o canal 1 com FV1430CN039_IZSLF e assim por diante
 
 depois preencheremos os nomes de 
+
+
+
+
+
+Tenho um código que já le um arquivo e cria uma estrutura no formato 
+Drop    
+    slot   
+        modelo
+        Canais[...]
+            N   
+            nome
+            comentário
+
+os drops, slots, e modelo ja foram preenchidos agora falta oscanais 
+
+A variavel que recebe a estrutura chama matriz_hardware e a leitura do arquivo ja e feita na variavel caminho_unitpro.
+Agora quero preencher os canais.
+
+no meu arquivo vou ter uma parte com as variáveis de cada cartão, elas vão ter o seguinte formato
+
+</variables>
+		<variables name="ED_DROP02_SLOT04" typeName="T_Q_DIS_STD_IN_32">
+			<attribute name="ManagedKey" value="E7D8CF9E-56F8-4F06-A957-6E874C55449C"></attribute>
+			<attribute name="Owner" value="\2.2\1.4"></attribute>
+			<instanceElementDesc name="DIS_CH_IN">
+				<instanceElementDesc name="[0]">
+					<instanceElementDesc name="VALUE">
+						<attribute name="Alias" value="FV1430CN039_IZSHA"></attribute>
+					</instanceElementDesc>
+				</instanceElementDesc>
+				<instanceElementDesc name="[1]">
+					<instanceElementDesc name="VALUE">
+						<attribute name="Alias" value="FV1430CN039_IZSLF"></attribute>
+					</instanceElementDesc>
+				</instanceElementDesc>
+				<instanceElementDesc name="[2]">
+					<instanceElementDesc name="VALUE">
+						<attribute name="Alias" value="AG1430CN01_ILIGA"></attribute>
+					</instanceElementDesc>
+				</instanceElementDesc>
+
+as informações do drop slot estão no nome da variavel [XX]_DROP[YY]_SLOT[ZZ] 
+os valores YY define o numero do drop, e os valores ZZ o numero de cada slot 
+e depois nos numeros de cada canal temos um numero e uma tag associada. No exemplo o canal 0
+esta preenchido com o tag FV1430CN039_IZSHA e o canal 1 com FV1430CN039_IZSLF e assim por diante
+
+AGORA QUERO OUTRA FUNÇÃO para preencher os comentarios das variaveis. para isso vc pode navegar na matriz_hardware
+e verificar todas as tags e bater com as tags existente na lista_variaveis_lidas
