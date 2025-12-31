@@ -3,9 +3,10 @@ import xml.etree.ElementTree as ET
 import os
 import re
 from openpyxl import load_workbook
-from openpyxl.utils import get_column_letter
-from openpyxl.styles import Alignment, Font, Side, Border
+from openpyxl import Workbook
+from openpyxl.styles import Alignment, Border, Side, Font, PatternFill
 from datetime import datetime
+from openpyxl.worksheet.pagebreak import Break # Import necessário para quebras de página
 from typing import Dict, Any, List
 import sys
 
@@ -180,6 +181,121 @@ def preencher_comentarios_na_matriz(matriz_hardware, lista_variaveis_lidas):
 
     print(f"Sucesso: {contador} comentários vinculados aos canais.")
 
+#----------------------GERAÇÃO DO ARQUIVO EXCEL----------------------------
+
+def gerar_excel(matriz_hardware, titulo_projeto, modelo_plc):
+    data_hoje = datetime.now().strftime("%Y-%m-%d")
+    nome_arquivo = f"REMOTE_IO_[{titulo_projeto.upper()}]_{data_hoje}.xlsx"
+    
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Lista de IO"
+
+    # --- CONFIGURAÇÕES DE IMPRESSÃO (A4, Retrato, Ajustar à largura) ---
+    ws.page_setup.paperSize = ws.PAPERSIZE_A4
+    ws.page_setup.orientation = ws.ORIENTATION_LANDSCAPE
+    # Ajusta para que tudo caiba na largura de 1 página, mas altura livre (cada slot será uma)
+    ws.sheet_properties.pageSetUpPr.fitToPage = True
+    ws.page_setup.fitToWidth = 1
+    ws.page_setup.fitToHeight = 0 
+    
+    # Margens estreitas para aproveitar espaço
+    ws.page_margins.left = 0.5
+    ws.page_margins.right = 0.5
+    ws.page_margins.top = 0.5
+    ws.page_margins.bottom = 0.5
+
+    # Estilos (os mesmos que definimos antes)
+    thin_border = Border(left=Side(style='thin'), right=Side(style='thin'), 
+                         top=Side(style='thin'), bottom=Side(style='thin'))
+    header_font = Font(bold=True, size=10)
+    center_aligned = Alignment(horizontal='center', vertical='center', wrap_text=True)
+    left_aligned = Alignment(horizontal='left', vertical='center', wrap_text=True)
+
+    linha_atual = 1
+
+    # Ordenação para garantir sequência lógica
+    for num_drop in sorted(matriz_hardware.keys()):
+        obj_drop = matriz_hardware[num_drop]
+        for num_slot in sorted(obj_drop.slots.keys()):
+            obj_slot = obj_drop.slots[num_slot]
+
+            # --- CABEÇALHO (Linha 1 do Slot) ---
+            ws.cell(row=linha_atual, column=1, value="VALE").font = header_font
+            ws.merge_cells(start_row=linha_atual, start_column=2, end_row=linha_atual, end_column=3)
+            ws.cell(row=linha_atual, column=2, value=titulo_projeto).font = header_font
+            
+            ws.cell(row=linha_atual, column=4, value=f"Modelo\n{modelo_plc}").font = header_font
+            ws.cell(row=linha_atual, column=5, value=f"Cartão\n{obj_slot.modelo}").font = header_font
+            ws.cell(row=linha_atual, column=6, value=f"Drop\n{num_drop:02d}").font = header_font
+            ws.cell(row=linha_atual, column=7, value=f"Slot\n{num_slot:02d}").font = header_font
+
+            for col in range(1, 8):
+                cell = ws.cell(row=linha_atual, column=col)
+                cell.alignment = center_aligned
+                cell.border = thin_border
+
+            # --- LINHA 2 (Subtítulo e Revisão) ---
+            ws.merge_cells(start_row=linha_atual+1, start_column=1, end_row=linha_atual+1, end_column=5)
+            ws.cell(row=linha_atual+1, column=1, value="Entradas/Saídas Digitais ou Analógicas").alignment = center_aligned
+            ws.merge_cells(start_row=linha_atual+1, start_column=6, end_row=linha_atual+1, end_column=7)
+            ws.cell(row=linha_atual+1, column=6, value=f"Revisão: {data_hoje}").alignment = center_aligned
+            
+            for col in range(1, 8):
+                ws.cell(row=linha_atual+1, column=col).border = thin_border
+
+            # --- LINHA 3 (Títulos da Tabela) ---
+            ws.cell(row=linha_atual+2, column=1, value="BORNE").font = header_font
+            ws.merge_cells(start_row=linha_atual+2, start_column=2, end_row=linha_atual+2, end_column=3)
+            ws.cell(row=linha_atual+2, column=2, value="TAG Equipamento").font = header_font
+            ws.merge_cells(start_row=linha_atual+2, start_column=4, end_row=linha_atual+2, end_column=7)
+            ws.cell(row=linha_atual+2, column=4, value="DESCRIÇÃO / COMENTÁRIO").font = header_font
+            
+            for col in range(1, 8):
+                cell = ws.cell(row=linha_atual+2, column=col)
+                cell.alignment = center_aligned
+                cell.border = thin_border
+                cell.fill = PatternFill(start_color="D9D9D9", end_color="D9D9D9", fill_type="solid")
+
+            # --- CANAIS (Preenchimento) ---
+            # Fixamos em 32 linhas por slot para garantir que o tamanho da página seja constante
+            for i in range(32):
+                r_idx = linha_atual + 3 + i
+                
+                # Borne
+                ws.cell(row=r_idx, column=1, value=i+1).alignment = center_aligned
+                
+                tag = "-"
+                coment = "-"
+                if i < len(obj_slot.canais):
+                    tag = obj_slot.canais[i].nome or "-"
+                    coment = obj_slot.canais[i].comentario or "-"
+
+                # Tag
+                ws.merge_cells(start_row=r_idx, start_column=2, end_row=r_idx, end_column=3)
+                ws.cell(row=r_idx, column=2, value=tag).alignment = center_aligned
+                
+                # Comentário
+                ws.merge_cells(start_row=r_idx, start_column=4, end_row=r_idx, end_column=7)
+                ws.cell(row=r_idx, column=4, value=coment).alignment = left_aligned
+
+                for col in range(1, 8):
+                    ws.cell(row=r_idx, column=col).border = thin_border
+
+            # --- FINALIZAÇÃO DO SLOT ---
+            # Pula 2 linhas para dar um espaço visual antes da quebra
+            linha_atual += 35 # 3 de cabeçalho + 32 de canais + 1 de respiro
+            
+            # Insere quebra de página manual para o próximo slot
+            ws.row_breaks.append(Break(id=linha_atual-1))
+
+    # Ajuste final de colunas
+    larguras = [10, 20, 15, 30, 30, 15, 15]
+    for i, w in enumerate(larguras):
+        ws.column_dimensions[chr(65+i)].width = w
+
+    wb.save(nome_arquivo)
+    print(f"Arquivo único gerado: {nome_arquivo}")
 
 #----------------------MAIN----------------------------
 if __name__ == "__main__":
@@ -214,4 +330,10 @@ if __name__ == "__main__":
     # Cruza os dados da matriz com a lista_variaveis_lidas
     preencher_comentarios_na_matriz(matriz_hardware, lista_variaveis_lidas)
 
+    # Supondo que você extraiu essas informações do XML ou entrada do usuário:
+    titulo_projeto_extraido = "UC1000CC21" 
+    modelo_plc_extraido = "M580"
+
+    # 6. Geração do arquivo com o nome dinâmico: REMOTE_IO_[UC1000CC21]_2025-12-31.xlsx
+    gerar_excel(matriz_hardware, titulo_projeto_extraido, modelo_plc_extraido)
     print("Processamento concluído.") 
