@@ -263,44 +263,42 @@ def gerar_excel(matriz_hardware, titulo_projeto, modelo_plc):
     ws = wb.active
     ws.title = "Lista de IO"
 
-    # --- CONFIGURAÇÕES DE IMPRESSÃO (A4, Retrato, Ajustar à largura) ---
+    # --- CONFIGURAÇÕES DE IMPRESSÃO ---
     ws.page_setup.paperSize = ws.PAPERSIZE_A4
     ws.page_setup.orientation = ws.ORIENTATION_LANDSCAPE
-    # Ajusta para que tudo caiba na largura de 1 página, mas altura livre (cada slot será uma)
     ws.sheet_properties.pageSetUpPr.fitToPage = True
     ws.page_setup.fitToWidth = 1
     ws.page_setup.fitToHeight = 0 
     
-    # Margens estreitas para aproveitar espaço
     ws.page_margins.left = 0.5
     ws.page_margins.right = 0.5
     ws.page_margins.top = 0.5
     ws.page_margins.bottom = 0.5
 
-    # Estilos (os mesmos que definimos antes)
+    # Estilos
     thin_border = Border(left=Side(style='thin'), right=Side(style='thin'), 
                          top=Side(style='thin'), bottom=Side(style='thin'))
     header_font = Font(bold=True, size=10)
     center_aligned = Alignment(horizontal='center', vertical='center', wrap_text=True)
-    left_aligned = Alignment(horizontal='left', vertical='center', wrap_text=True)
+    left_aligned = Alignment(horizontal='left', vertical='center', wrap_text=True, indent=1)
 
     linha_atual = 1
 
-    # Ordenação para garantir sequência lógica
     for num_drop in sorted(matriz_hardware.keys()):
         obj_drop = matriz_hardware[num_drop]
         for num_slot in sorted(obj_drop.slots.keys()):
             obj_slot = obj_drop.slots[num_slot]
 
             # --- CABEÇALHO (Linha 1 do Slot) ---
+            # Mescla a Coluna 1 (A) e 2 (B) para o texto "VALE"
+            ws.merge_cells(start_row=linha_atual, start_column=1, end_row=linha_atual, end_column=2)
             ws.cell(row=linha_atual, column=1, value="VALE").font = header_font
-            ws.merge_cells(start_row=linha_atual, start_column=2, end_row=linha_atual, end_column=3)
-            ws.cell(row=linha_atual, column=2, value=titulo_projeto).font = header_font
-            
+            ws.cell(row=linha_atual, column=3, value=titulo_projeto).font = header_font
             ws.cell(row=linha_atual, column=4, value=f"Modelo\n{modelo_plc}").font = header_font
             ws.cell(row=linha_atual, column=5, value=f"Cartão\n{obj_slot.modelo}").font = header_font
             ws.cell(row=linha_atual, column=6, value=f"Drop\n{num_drop:02d}").font = header_font
-            ws.cell(row=linha_atual, column=7, value=f"Slot\n{num_slot:02d}").font = header_font
+            ws.cell(row=linha_atual, column=7, value=f"Slot\n{num_slot:02d}").font
+            
 
             for col in range(1, 8):
                 cell = ws.cell(row=linha_atual, column=col)
@@ -318,8 +316,8 @@ def gerar_excel(matriz_hardware, titulo_projeto, modelo_plc):
 
             # --- LINHA 3 (Títulos da Tabela) ---
             ws.cell(row=linha_atual+2, column=1, value="BORNE").font = header_font
-            ws.merge_cells(start_row=linha_atual+2, start_column=2, end_row=linha_atual+2, end_column=3)
-            ws.cell(row=linha_atual+2, column=2, value="TAG Equipamento").font = header_font
+            ws.cell(row=linha_atual+2, column=2, value="BIT").font = header_font # Nova Coluna
+            ws.cell(row=linha_atual+2, column=3, value="TAG Equipamento").font = header_font
             ws.merge_cells(start_row=linha_atual+2, start_column=4, end_row=linha_atual+2, end_column=7)
             ws.cell(row=linha_atual+2, column=4, value="DESCRIÇÃO / COMENTÁRIO").font = header_font
             
@@ -330,12 +328,15 @@ def gerar_excel(matriz_hardware, titulo_projeto, modelo_plc):
                 cell.fill = PatternFill(start_color="D9D9D9", end_color="D9D9D9", fill_type="solid")
 
             # --- CANAIS (Preenchimento) ---
-            # Fixamos em 32 linhas por slot para garantir que o tamanho da página seja constante
             for i in range(32):
                 r_idx = linha_atual + 3 + i
+                ws.row_dimensions[r_idx].height = 14.5 # Ajuste para caber no A4 Paisagem
                 
-                # Borne
+                # Borne (Coluna 1)
                 ws.cell(row=r_idx, column=1, value=i+1).alignment = center_aligned
+                
+                # Bit (Coluna 2: Borne - 1)
+                ws.cell(row=r_idx, column=2, value=i).alignment = center_aligned
                 
                 tag = "-"
                 coment = "-"
@@ -343,11 +344,10 @@ def gerar_excel(matriz_hardware, titulo_projeto, modelo_plc):
                     tag = obj_slot.canais[i].nome or "-"
                     coment = obj_slot.canais[i].comentario or "-"
 
-                # Tag
-                ws.merge_cells(start_row=r_idx, start_column=2, end_row=r_idx, end_column=3)
-                ws.cell(row=r_idx, column=2, value=tag).alignment = center_aligned
+                # Tag (Coluna 3)
+                ws.cell(row=r_idx, column=3, value=tag).alignment = center_aligned
                 
-                # Comentário
+                # Comentário (Colunas 4 a 7 mescladas)
                 ws.merge_cells(start_row=r_idx, start_column=4, end_row=r_idx, end_column=7)
                 ws.cell(row=r_idx, column=4, value=coment).alignment = left_aligned
 
@@ -355,20 +355,16 @@ def gerar_excel(matriz_hardware, titulo_projeto, modelo_plc):
                     ws.cell(row=r_idx, column=col).border = thin_border
 
             # --- FINALIZAÇÃO DO SLOT ---
-            # Pula 2 linhas para dar um espaço visual antes da quebra
-            linha_atual += 35 # 3 de cabeçalho + 32 de canais + 1 de respiro
-            
-            # Insere quebra de página manual para o próximo slot
+            linha_atual += 35 
             ws.row_breaks.append(Break(id=linha_atual-1))
 
-    # Ajuste final de colunas
-    larguras = [10, 20, 15, 30, 30, 15, 15]
+    # Ajuste final de colunas (A=Borne, B=Bit, C=Tag, D...G=Comentário)
+    larguras = [10, 10, 30, 21, 21, 21, 21] 
     for i, w in enumerate(larguras):
         ws.column_dimensions[chr(65+i)].width = w
 
     wb.save(nome_arquivo)
     print(f"Arquivo único gerado: {nome_arquivo}")
-
 #----------------------MAIN----------------------------
 if __name__ == "__main__":
 
