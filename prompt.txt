@@ -129,3 +129,14 @@ esta preenchido com o tag FV1430CN039_IZSHA e o canal 1 com FV1430CN039_IZSLF e 
 
 AGORA QUERO OUTRA FUNÇÃO para preencher os comentarios das variaveis. para isso vc pode navegar na matriz_hardware
 e verificar todas as tags e bater com as tags existente na lista_variaveis_lidas
+
+Para identificar o modelo sera encontrado no inicio do arquivo no atributo <partItem family=
+
+<IOConf>
+		<PLC autoRun="false" MWInitZero="true" ColdStartOnly="false" ccotfActive="false" numberInternalWord="35000" numberConstantWord="256" numberInternalBit="36096" numberInputWord="2048" numberInputBit="512" CPU_DoNotSupportQtmDROP="0" HSBY_A_state="true" HSBY_B_state="true" HSBY_nbDiffMaxAuthorized="20" HSBY_StandbySectionExec="1" HSBY_LogicMismatchAuthorized="false">
+			<partItem family="M580" partNumber="BMEH586040" vendorName="Schneider Automation" version="02.70"></partItem>
+			<equipInfo topoAddress="\0.0\0.0" position="0" NodeGuid="{1B5AE6F1-7799-4A55-BD10-B183B8659ADE}"></equipInfo>
+			<configATS>
+				<busATS name="XBusM580">
+
+para este caso é "M580"

@@ -181,11 +181,83 @@ def preencher_comentarios_na_matriz(matriz_hardware, lista_variaveis_lidas):
 
     print(f"Sucesso: {contador} comentários vinculados aos canais.")
 
+
+def ler_titulo_modelo(caminho_arquivo_xef: str, lista_variaveis_lidas: List[Dict[str, Any]]) -> str:
+ 
+    
+    try:
+        tree = ET.parse(caminho_arquivo_xef)
+        root = tree.getroot()
+        # Busca o partItem que está dentro de PLC
+        plc_part = root.find(".//PLC/partItem")
+        if plc_part is not None:
+            MODELO = plc_part.get("family", "Modelo Desconhecido")
+    except Exception as e:
+        print(f"Erro ao extrair família do PLC: {e}")
+        MODELO = "PLC"
+
+    """
+    Lê o atributo 'name' da tag contentHeader no arquivo XEF.
+    Se o título for "Project", procura por uma tag terminada em '_DCOM' E do tipo 'WORD'
+    na lista de variáveis e a utiliza como título.
+    """
+
+    # --- 1. Lógica Original de Leitura do Título no XML ---
+    
+    titulo_lido = 'Projeto_Invalido'
+    
+    try:
+        tree = ET.parse(caminho_arquivo_xef)
+        root = tree.getroot()
+        header = root.find('contentHeader')
+        
+        if header is not None:
+            # Pega o nome. Se não houver, usa 'Projeto_Sem_Nome'.
+            titulo_lido = header.get('name', 'Projeto_Sem_Nome')
+        else:
+            titulo_lido = 'Projeto_Sem_Header'
+            
+    except (FileNotFoundError, ET.ParseError):
+        # Mantém 'Projeto_Invalido'
+        pass
+        
+    # --- 2. Lógica de Verificação e Substituição para "_DCOM" e tipo "WORD" ---
+    
+    if titulo_lido == "Project":
+        
+        print("\nAlerta: Título original encontrado é 'Project'. Buscando fallback '_DCOM' (Tipo WORD)...")
+        
+        # Procura a primeira variável que atenda a ambas as condições
+        for variavel in lista_variaveis_lidas:
+            nome_variavel = variavel.get('nome', '')
+            tipo_variavel = variavel.get('tipo', '')
+            
+            # Condição A: A tag deve terminar com "_DCOM"
+            condicao_dcom = nome_variavel and nome_variavel.endswith('_DCOM')
+            
+            # Condição B: O tipo deve ser "WORD"
+            condicao_word = tipo_variavel == 'WORD'
+            
+            # Verifica se AMBAS as condições são atendidas
+            if condicao_dcom and condicao_word:
+                print(f"Substituindo 'Project' pela tag: {nome_variavel}")
+                return nome_variavel.removesuffix('_DCOM') # Retorna imediatamente o novo título
+                
+        # 3. Se o loop terminar sem encontrar a tag "_DCOM" tipo "WORD"
+        print("Aviso: Nenhuma tag '_DCOM' do tipo 'WORD' foi localizada na lista de variáveis lidas.")
+        return titulo_lido
+        
+    else:
+        # Se o título original for válido e não for "Project", retorna o que foi lido
+        return titulo_lido, MODELO
+
+
+
 #----------------------GERAÇÃO DO ARQUIVO EXCEL----------------------------
 
 def gerar_excel(matriz_hardware, titulo_projeto, modelo_plc):
     data_hoje = datetime.now().strftime("%Y-%m-%d")
-    nome_arquivo = f"REMOTE_IO_[{titulo_projeto.upper()}]_{data_hoje}.xlsx"
+    nome_arquivo = f"REMOTE_IO_{titulo_projeto.upper()}_{data_hoje}.xlsx"
     
     wb = Workbook()
     ws = wb.active
@@ -331,9 +403,9 @@ if __name__ == "__main__":
     preencher_comentarios_na_matriz(matriz_hardware, lista_variaveis_lidas)
 
     # Supondo que você extraiu essas informações do XML ou entrada do usuário:
-    titulo_projeto_extraido = "UC1000CC21" 
-    modelo_plc_extraido = "M580"
+    titulo_projeto, modelo_plc = ler_titulo_modelo(caminho_unitpro,lista_variaveis_lidas) 
+    
 
     # 6. Geração do arquivo com o nome dinâmico: REMOTE_IO_[UC1000CC21]_2025-12-31.xlsx
-    gerar_excel(matriz_hardware, titulo_projeto_extraido, modelo_plc_extraido)
+    gerar_excel(matriz_hardware, titulo_projeto, modelo_plc)
     print("Processamento concluído.") 
