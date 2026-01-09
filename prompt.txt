@@ -140,3 +140,84 @@ Para identificar o modelo sera encontrado no inicio do arquivo no atributo <part
 				<busATS name="XBusM580">
 
 para este caso é "M580"
+
+
+---------------------------------------------------------------------
+
+
+Eu alterei minha classe slot para acrescentar um endereço, ficou desta forma:
+
+Class Slot:
+    def __init__(self, numero, modelo, endereco):
+        self.numero = numero
+        self.modelo = modelo
+        self.endereco = endereco
+        self.qtd_canais = MODELOS_CAPACIDADE.get(modelo, 0)
+        # Inicializa a lista de canais com base na capacidade do modelo
+        self.canais = [Canal(i+1) for i in range(self.qtd_canais)]
+
+Esse endereço será capturado no tipo de cartão: Eu te dei uma estrutura para  vc capturar o tipo de cartão, 
+mas na verdade pode ser encontrado em duas estruturas diferentes sendo estas:
+
+<moduleQuantum IOVision="device DDT">
+								<deviceDDT guidKey="2FE6C34F-65CE-4C10-A0BB-639BE6AD1081" implInstName="ED_DROP02_SLOT03"></deviceDDT>
+								<partItem family="Discrete" partNumber="140DAI55300" vendorName="Schneider Automation" version="01.00"></partItem>
+								<equipInfo topoAddress="\2.2\1.3" position="3" NodeGuid="{BF7CDC7D-8FE7-43AB-A316-FEAE7F73F575}"></equipInfo>
+								<moduleInfo interruptModule="0" fHoldLast="0" inputRefOffset="16" outputRefOffset="0" inputIsRegister="0" outputIsRegister="0" conversionModeInput="0" conversionModeOutput="0" quantumTask="4">
+									<modData lengthOfModParamWords="0" lengthOfAdditionalInfo="0"></modData>
+								</moduleInfo>
+							</moduleQuantum>
+
+ou
+
+<moduleQuantum IOVision="state ram full">
+								<partItem family="Discrete" partNumber="140DAI55300" vendorName="Schneider Automation" version="01.00"></partItem>
+								<equipInfo topoAddress="\2.3\1.3" position="3" NodeGuid="{5E3476FA-A9DC-4C38-B1F1-EFD668AD57C9}"></equipInfo>
+								<moduleInfo interruptModule="0" fHoldLast="0" inputRefOffset="321" outputRefOffset="0" inputIsRegister="1" outputIsRegister="0" conversionModeInput="0" conversionModeOutput="0" quantumTask="4">
+									<modData lengthOfModParamWords="0" lengthOfAdditionalInfo="0"></modData>
+								</moduleInfo>
+							</moduleQuantum>
+
+Então se o modulo quantum for: moduleQuantum IOVision="device DDT" entao o endereço sera o implInstName, que no exemplo é ED_DROP02_SLOT03
+se o modulo quantum for: moduleQuantum IOVision="state ram full" entao o endereço sera o inputRefOffset que neste caso é 321.
+
+Dito isso quero que altere o inicio da função gerar_matriz_plc para retornar acrescentar este endereço. Segue a função atual
+
+
+def gerar_matriz_plc(caminho):
+    tree = ET.parse(caminho)
+    root = tree.getroot()
+    
+    drops = {} # Dicionário {numero_drop: Objeto Drop}
+
+    # Procurar por módulos (Quantum ou outros que sigam a mesma estrutura)
+    # O XPath pode variar dependendo da estrutura completa do seu arquivo
+    for module in root.findall(".//moduleQuantum"):
+        try:
+            # Pegar o Part Number (Modelo)
+            part_item = module.find("partItem")
+            modelo = part_item.get("partNumber")
+
+            # Pegar o TopoAddress (Ex: \2.2\1.3)
+            equip_info = module.find("equipInfo")
+            address = equip_info.get("topoAddress")
+
+            # Regex para extrair DROP e SLOT do endereço \2.X\1.Y
+            match = re.search(r'\\2\.(\d+)\\1\.(\d+)', address)
+            if match:
+                num_drop = int(match.group(1))
+                num_slot = int(match.group(2))
+
+                # Adiciona Drop se não existir
+                if num_drop not in drops:
+                    drops[num_drop] = Drop(num_drop)
+                
+                # Adiciona Slot ao Drop
+                drops[num_drop].slots[num_slot] = Slot(num_slot, modelo, endereco)
+                
+                print(f"Mapeado: Drop {num_drop}, Slot {num_slot} -> Modelo {modelo}")
+
+        except Exception as e:
+            print(f"Erro ao processar módulo: {e}")
+
+    return drops

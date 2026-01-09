@@ -1,4 +1,4 @@
-import pandas as pd
+#import pandas as pd
 import xml.etree.ElementTree as ET
 import os
 import re
@@ -15,13 +15,21 @@ ARQUIVO_UNITPRO = 'unitpro.xef'
 TIPOS_PERMITIDOS = ['WORD', 'BOOL', 'EBOOL', 'INT']
 
 
-
-MODELOS_CAPACIDADE = {
-    "140ACI03000": 8, "140ACO02000": 4, "140ACO13000": 8,
-    "140ARI03010": 8, "140DDI84100": 32, "140DAI54000": 16,
-    "140DAI55300": 32, "140DAO84210": 16, "140DAI74000": 16,
-    "140DDI35300": 32, "140DDO35300": 32, "BMXDDI3202K": 32,
-    "BMXDDO3202K": 32
+# Mapeamento completo dos cartões
+MODELOS_INFO = {
+    "140ACI03000": {"canais": 8,  "prefixo": "%IW"},
+    "140ACO02000": {"canais": 4,  "prefixo": "%MW"},
+    "140ACO13000": {"canais": 8,  "prefixo": "%MW"},
+    "140ARI03010": {"canais": 8,  "prefixo": "%IW"},
+    "140DDI84100": {"canais": 32, "prefixo": "%I"},
+    "140DAI54000": {"canais": 16, "prefixo": "%I"},
+    "140DAI55300": {"canais": 32, "prefixo": "%I"},
+    "140DAO84210": {"canais": 16, "prefixo": "%M"},
+    "140DAI74000": {"canais": 16, "prefixo": "%M"},
+    "140DDI35300": {"canais": 32, "prefixo": "%I"},
+    "140DDO35300": {"canais": 32, "prefixo": "%M"},
+    "BMXDDI3202K": {"canais": 32, "prefixo": "%I"},
+    "BMXDDO3202K": {"canais": 32, "prefixo": "%M"}
 }
 
 class Canal:
@@ -31,10 +39,11 @@ class Canal:
         self.comentario = ""
 
 class Slot:
-    def __init__(self, numero, modelo):
+    def __init__(self, numero, modelo, endereco):
         self.numero = numero
         self.modelo = modelo
-        self.qtd_canais = MODELOS_CAPACIDADE.get(modelo, 0)
+        self.endereco = endereco
+        self.qtd_canais = MODELOS_INFO.get(modelo, 0)
         # Inicializa a lista de canais com base na capacidade do modelo
         self.canais = [Canal(i+1) for i in range(self.qtd_canais)]
 
@@ -42,7 +51,7 @@ class Drop:
     def __init__(self, numero):
         self.numero = numero
         self.slots = {} # Dicionário {numero_slot: Objeto Slot}
-
+'''
 def gerar_matriz_plc(caminho):
     tree = ET.parse(caminho)
     root = tree.getroot()
@@ -72,7 +81,7 @@ def gerar_matriz_plc(caminho):
                     drops[num_drop] = Drop(num_drop)
                 
                 # Adiciona Slot ao Drop
-                drops[num_drop].slots[num_slot] = Slot(num_slot, modelo)
+                drops[num_drop].slots[num_slot] = Slot(num_slot, modelo, endereco)
                 
                 print(f"Mapeado: Drop {num_drop}, Slot {num_slot} -> Modelo {modelo}")
 
@@ -80,6 +89,60 @@ def gerar_matriz_plc(caminho):
             print(f"Erro ao processar módulo: {e}")
 
     return drops
+'''
+
+def gerar_matriz_plc(caminho):
+    tree = ET.parse(caminho)
+    root = tree.getroot()
+    
+    drops = {} # Dicionário {numero_drop: Objeto Drop}
+
+    for module in root.findall(".//moduleQuantum"):
+        try:
+            # 1. Pegar o Part Number (Modelo)
+            part_item = module.find("partItem")
+            modelo = part_item.get("partNumber")
+
+            # 2. Lógica para capturar o ENDEREÇO baseado no IOVision
+            vision_type = module.get("IOVision")
+            endereco = "Desconhecido"
+
+            if vision_type == "device DDT":
+                # Busca o atributo implInstName dentro da tag deviceDDT
+                device_ddt = module.find("deviceDDT")
+                if device_ddt is not None:
+                    endereco = device_ddt.get("implInstName")
+            
+            elif vision_type == "state ram full":
+                # Busca o atributo inputRefOffset dentro da tag moduleInfo
+                module_info = module.find("moduleInfo")
+                if module_info is not None:
+                    endereco = module_info.get("inputRefOffset")
+
+            # 3. Pegar o TopoAddress para localizar Drop/Slot
+            equip_info = module.find("equipInfo")
+            topo_address = equip_info.get("topoAddress")
+
+            # Regex para extrair DROP e SLOT do endereço \2.X\1.Y
+            match = re.search(r'\\2\.(\d+)\\1\.(\d+)', topo_address)
+            if match:
+                num_drop = int(match.group(1))
+                num_slot = int(match.group(2))
+
+                # Adiciona Drop se não existir
+                if num_drop not in drops:
+                    drops[num_drop] = Drop(num_drop)
+                
+                # Adiciona Slot ao Drop com o novo parâmetro 'endereco'
+                drops[num_drop].slots[num_slot] = Slot(num_slot, modelo, endereco)
+                
+                print(f"Mapeado: Drop {num_drop}, Slot {num_slot} -> Modelo {modelo} | Endereço: {endereco}")
+
+        except Exception as e:
+            print(f"Erro ao processar módulo: {e}")
+
+    return drops
+
 
 def ler_variaveis_unitpro(caminho_arquivo: str) -> List[Dict[str, str]]:
     """Lê todas as variáveis do unitpro.xef."""
