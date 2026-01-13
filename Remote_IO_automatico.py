@@ -31,22 +31,36 @@ MODELOS_INFO = {
     "BMXDDI3202K": {"canais": 32, "prefixo": "%I"},
     "BMXDDO3202K": {"canais": 32, "prefixo": "%M"}
 }
+MODELOS_EXCECAO = ["140CPS", "140CRA", "140NRP"]
 
 class Canal:
     def __init__(self, numero):
         self.numero = numero
-        self.nome = ""
-        self.comentario = ""
-
+        self.nome = "-"
+        self.comentario = "-"
+        self.endereco = ""  
 class Slot:
-    def __init__(self, numero, modelo, endereco):
+    def __init__(self, numero, modelo, endereco_base):
         self.numero = numero
         self.modelo = modelo
-        self.endereco = endereco
-        self.qtd_canais = MODELOS_INFO.get(modelo, 0)
-        # Inicializa a lista de canais com base na capacidade do modelo
-        self.canais = [Canal(i+1) for i in range(self.qtd_canais)]
+        self.endereco_base = endereco_base  # Ex: "33" ou "ED_DROP..."
+        self.qtd_canais = 0
+        self.canais = []
 
+        if not any(self.modelo.startswith(p) for p in MODELOS_EXCECAO):
+            info = MODELOS_INFO.get(modelo)
+            if info:
+                self.qtd_canais = info['canais']
+                prefixo = info['prefixo']
+                
+                for i in range(self.qtd_canais):
+                    novo_canal = Canal(i + 1)
+                    # Se for numérico, gera o endereço sequencial
+                    if str(self.endereco_base).isdigit():
+                        num_final = int(self.endereco_base) + i
+                        novo_canal.endereco = f"{prefixo}{num_final}"
+                    self.canais.append(novo_canal)
+            
 class Drop:
     def __init__(self, numero):
         self.numero = numero
@@ -143,7 +157,7 @@ def gerar_matriz_plc(caminho):
 
     return drops
 
-
+'''
 def ler_variaveis_unitpro(caminho_arquivo: str) -> List[Dict[str, str]]:
     """Lê todas as variáveis do unitpro.xef."""
     # ... (Implementação omitida por brevidade, assumida como funcional)
@@ -172,7 +186,38 @@ def ler_variaveis_unitpro(caminho_arquivo: str) -> List[Dict[str, str]]:
                 'tipo': tipo
             })
     return lista_variaveis
+'''
+def ler_variaveis_unitpro(caminho_arquivo: str) -> Dict[str, Dict[str, str]]:
+    """Retorna um dicionário onde a chave é o NOME da variável."""
+    mapa_por_nome = {}
+    try:
+        tree = ET.parse(caminho_arquivo)
+        root = tree.getroot()
+    except Exception as e:
+        print(f"ERRO: {e}")
+        return mapa_por_nome
 
+    for var_element in root.findall('.//variables'):
+        nome = var_element.get('name')
+        if not nome: continue
+        
+        tipo = var_element.get('typeName')
+        endereco_raw = var_element.get('topologicalAddress')
+        
+        comentario_elem = var_element.find('comment')
+        comentario = comentario_elem.text.strip() if comentario_elem is not None and comentario_elem.text else ""
+
+        if tipo in TIPOS_PERMITIDOS:
+            mapa_por_nome[nome] = {
+                'nome': nome,
+                'comentario': comentario,
+                'endereco': endereco_raw, # Mantemos o original aqui (%I00033)
+                'tipo': tipo
+            }
+    return mapa_por_nome
+
+
+'''
 def preencher_canais_da_matriz(caminho_arquivo, matriz_hardware):
     tree = ET.parse(caminho_arquivo)
     root = tree.getroot()
@@ -216,13 +261,85 @@ def preencher_canais_da_matriz(caminho_arquivo, matriz_hardware):
                                         #print(f"Preenchido: Drop {num_drop} Slot {num_slot} Canal {indice_canal} -> {tag_nome}")
                         except ValueError:
                             continue
+'''
+def normalizar_endereco(endereco_str):
+    """Converte '%I00033' ou '%I33' em ('%I', 33) para comparação justa."""
+    if not endereco_str or not endereco_str.startswith("%"):
+        return None
+    match = re.match(r'(%[a-zA-Z]+)(\d+)', endereco_str)
+    if match:
+        prefixo = match.group(1).upper()
+        numero = int(match.group(2))
+        return (prefixo, numero)
+    return None
 
+def preencher_canais_da_matriz(caminho_arquivo, matriz_hardware, mapa_por_nome):
+    # Índice auxiliar para State RAM: (Prefixo, Numero) -> Nome
+    # Isso resolve o problema de busca rápida por endereço
+    indice_endereco = {}
+    for nome, dados in mapa_por_nome.items():
+        if dados['endereco']:
+            norm = normalizar_endereco(dados['endereco'])
+            if norm:
+                indice_endereco[norm] = nome
+
+    tree = ET.parse(caminho_arquivo)
+    root = tree.getroot()
+
+    for drop in matriz_hardware.values():
+        for slot in drop.slots.values():
+            if not slot.canais: continue
+
+            # SITUAÇÃO 1: STATE RAM (Endereço base numérico)
+            if str(slot.endereco_base).isdigit():
+                for canal in slot.canais:
+                    chave_canal = normalizar_endereco(canal.endereco)
+                    nome_encontrado = indice_endereco.get(chave_canal)
+                    
+                    if nome_encontrado:
+                        dados = mapa_por_nome[nome_encontrado]
+                        canal.nome = dados['nome']
+                        canal.comentario = dados['comentario']
+
+            # SITUAÇÃO 2: DDT (Busca o Alias no XML)
+            else:
+                var_node = root.find(f".//variables[@name='{slot.endereco_base}']")
+                if var_node is not None:
+                    for ch_desc in var_node.findall(".//instanceElementDesc"):
+                        ch_name = ch_desc.get("name", "")
+                        if ch_name.startswith("[") and ch_name.endswith("]"):
+                            idx = int(ch_name.strip("[]"))
+                            if idx < len(slot.canais):
+                                val_node = ch_desc.find(".//instanceElementDesc[@name='VALUE']")
+                                if val_node is not None:
+                                    alias = val_node.find("attribute[@name='Alias']")
+                                    if alias is not None:
+                                        # Aqui está o pulo do gato: o Alias é o NOME
+                                        slot.canais[idx].nome = alias.get("value")
+
+ 
+
+
+
+def preencher_comentarios_na_matriz(matriz_hardware, mapa_por_nome):
+    contador = 0
+    for drop in matriz_hardware.values():
+        for slot in drop.slots.values():
+            for canal in slot.canais:
+                if canal.nome and canal.nome != "-":
+                    # Busca direta por NOME no dicionário
+                    dados = mapa_por_nome.get(canal.nome.strip())
+                    if dados:
+                        canal.comentario = dados['comentario']
+                        contador += 1
+    print(f"Sucesso: {contador} comentários processados.")
+
+
+'''
 def preencher_comentarios_na_matriz(matriz_hardware, lista_variaveis_lidas):
     # 1. Criar um dicionário de busca rápida {nome_da_tag: comentario}
     # Isso evita ter que percorrer a lista inteira para cada canal (O(1) vs O(n))
-    mapa_comentarios = {
-        var['nome']: var['comentario'] 
-        for var in lista_variaveis_lidas 
+    mapa_comentarios = { var['nome']: var['comentario'] for var in lista_variaveis_lidas 
         if var['nome']
     }
 
@@ -244,7 +361,7 @@ def preencher_comentarios_na_matriz(matriz_hardware, lista_variaveis_lidas):
 
     print(f"Sucesso: {contador} comentários vinculados aos canais.")
 
-
+'''
 def ler_titulo_modelo(caminho_arquivo_xef: str, lista_variaveis_lidas: List[Dict[str, Any]]) -> str:
  
     
@@ -292,8 +409,10 @@ def ler_titulo_modelo(caminho_arquivo_xef: str, lista_variaveis_lidas: List[Dict
         
         # Procura a primeira variável que atenda a ambas as condições
         for variavel in lista_variaveis_lidas:
-            nome_variavel = variavel.get('nome', '')
-            tipo_variavel = variavel.get('tipo', '')
+            nome_variavel = lista_variaveis_lidas[variavel]['nome']
+            #variavel.get('nome', '')
+            tipo_variavel = lista_variaveis_lidas[variavel]['tipo']
+            #variavel.get('tipo', '')
             
             # Condição A: A tag deve terminar com "_DCOM"
             condicao_dcom = nome_variavel and nome_variavel.endswith('_DCOM')
@@ -304,11 +423,11 @@ def ler_titulo_modelo(caminho_arquivo_xef: str, lista_variaveis_lidas: List[Dict
             # Verifica se AMBAS as condições são atendidas
             if condicao_dcom and condicao_word:
                 print(f"Substituindo 'Project' pela tag: {nome_variavel}")
-                return nome_variavel.removesuffix('_DCOM') # Retorna imediatamente o novo título
+                return nome_variavel.removesuffix('_DCOM'), MODELO # Retorna imediatamente o novo título
                 
         # 3. Se o loop terminar sem encontrar a tag "_DCOM" tipo "WORD"
         print("Aviso: Nenhuma tag '_DCOM' do tipo 'WORD' foi localizada na lista de variáveis lidas.")
-        return titulo_lido
+        return titulo_lido, MODELO
         
     else:
         # Se o título original for válido e não for "Project", retorna o que foi lido
@@ -455,7 +574,7 @@ if __name__ == "__main__":
     matriz_hardware = gerar_matriz_plc(caminho_unitpro)
  
     # 3. Preencher os nomes dos canais com base nas variáveis do arquivo
-    preencher_canais_da_matriz(caminho_unitpro, matriz_hardware)
+    preencher_canais_da_matriz(caminho_unitpro, matriz_hardware,lista_variaveis_lidas)
 
     # 4. Preencher os COMENTÁRIOS nos canais
     # Cruza os dados da matriz com a lista_variaveis_lidas

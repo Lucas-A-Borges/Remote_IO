@@ -221,3 +221,61 @@ def gerar_matriz_plc(caminho):
             print(f"Erro ao processar módulo: {e}")
 
     return drops
+
+
+	Agora eu tenho esta função que preenche os tags de cada cartão mas quero fazer uma mudança; 
+
+	preencher_canais_da_matriz(caminho_arquivo, matriz_hardware):
+    tree = ET.parse(caminho_arquivo)
+    root = tree.getroot()
+
+    # Itera sobre todas as variáveis no XML
+    for var in root.findall(".//variables"):
+        nome_var = var.get("name", "")
+        
+        # Regex para extrair Drop e Slot do nome (Ex: ED_DROP02_SLOT04)
+        match_info = re.search(r'DROP(\d+)_SLOT(\d+)', nome_var)
+        
+        if match_info:
+            num_drop = int(match_info.group(1))
+            num_slot = int(match_info.group(2))
+            
+            # Verifica se esse Drop e Slot existem na nossa matriz
+            if num_drop in matriz_hardware and num_slot in matriz_hardware[num_drop].slots:
+                obj_slot = matriz_hardware[num_drop].slots[num_slot]
+                
+                # Navega na estrutura interna: DIS_CH_IN -> [n] -> VALUE -> Alias
+                # Usamos .//instanceElementDesc para buscar os níveis de canais
+                for ch_desc in var.findall(".//instanceElementDesc"):
+                    ch_name = ch_desc.get("name", "") # Ex: "[0]", "[1]"
+                    
+                    if ch_name.startswith("[") and ch_name.endswith("]"):
+                        try:
+                            # Extrai o índice do canal: [0] -> 0
+                            indice_canal = int(ch_name.strip("[]"))
+                            
+                            # Busca o atributo 'Alias' dentro do elemento 'VALUE'
+                            value_elem = ch_desc.find(".//instanceElementDesc[@name='VALUE']")
+                            if value_elem is not None:
+                                attribute_alias = value_elem.find("attribute[@name='Alias']")
+                                if attribute_alias is not None:
+                                    tag_nome = attribute_alias.get("value")
+                                    
+                                    # Atribui ao objeto Canal correspondente
+                                    # Nota: No seu código Canal(i+1), então indice 0 é Canal(1)
+                                    if indice_canal < len(obj_slot.canais):
+                                        obj_slot.canais[indice_canal].nome = tag_nome
+                                        #print(f"Preenchido: Drop {num_drop} Slot {num_slot} Canal {indice_canal} -> {tag_nome}")
+                        except ValueError:
+                            continue
+
+
+	Se o atributo endereço da classe slot não for um número então segue normal procurando as variaves DROP_SLOT. 
+	Mas se for um número então faça o seguinte:
+	você vai verificar qual o modelo do cartão e pegar o prefixo dele na variável MODELOS_INFO e procurar na lista 
+	de variáveis qual TAG que tem o endereço do prefixo+numero. Por exemplo:
+
+	suponha que o cartão referente seja o "140ACO02000" e que o numero do endereço seja 33
+	O primeiro canal seria %MW33 o segundo canal seria %MW34 e assim por diante. 
+	Em seguida você vai procurar na lista de variáveis se tem alguma tag com o endereço %MW33 se tiver o nome desta 
+	tag será preenchida neste canal.  
