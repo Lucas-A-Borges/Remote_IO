@@ -12,7 +12,7 @@ import sys
 
 #definições ------------------------------------------
 ARQUIVO_UNITPRO = 'unitpro.xef'
-TIPOS_PERMITIDOS = ['WORD', 'BOOL', 'EBOOL', 'INT']
+TIPOS_PERMITIDOS = ['WORD', 'BOOL', 'EBOOL', 'INT','UINT']
 
 
 # Mapeamento completo dos cartões
@@ -131,8 +131,10 @@ def gerar_matriz_plc(caminho):
                 # Busca o atributo inputRefOffset dentro da tag moduleInfo
                 module_info = module.find("moduleInfo")
                 if module_info is not None:
-                    endereco = module_info.get("inputRefOffset")
-
+                    endereco_input = module_info.get("inputRefOffset")
+                    endereco_output = module_info.get("outputRefOffset")
+                    endereco = max(endereco_input, endereco_output)
+                    
             # 3. Pegar o TopoAddress para localizar Drop/Slot
             equip_info = module.find("equipInfo")
             topo_address = equip_info.get("topoAddress")
@@ -469,6 +471,8 @@ def gerar_excel(matriz_hardware, titulo_projeto, modelo_plc):
     for num_drop in sorted(matriz_hardware.keys()):
         obj_drop = matriz_hardware[num_drop]
         for num_slot in sorted(obj_drop.slots.keys()):
+            if num_slot < 3:
+                continue
             obj_slot = obj_drop.slots[num_slot]
 
             # --- CABEÇALHO (Linha 1 do Slot) ---
